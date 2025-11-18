@@ -42,6 +42,14 @@ This is a command-line interface (CLI) tool to gather intelligence from Reddit.
 python3 main.py --subreddit <rsmallbusiness> --report-type <overview> [--output <redditreporttest.csv>]
 ```
 
+### GUI usage
+
+You can also launch the GUI to generate reports interactively:
+
+```bash
+python3 gui.py
+```
+
 ### Arguments
 
 -   `--subreddit`: The subreddit to analyze.
