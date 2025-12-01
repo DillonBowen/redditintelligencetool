@@ -4,10 +4,11 @@ import csv
 import os
 from collections import Counter
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Iterable, List, Optional
 
 import praw
+from prawcore.exceptions import PrawcoreException
 
 os.environ['PYTHON_KEYRING_BACKEND'] = 'keyring.backends.null.Keyring'
 
@@ -42,6 +43,18 @@ def get_reddit_instance(config_file: str = 'config.ini') -> praw.Reddit:
     if missing_fields:
         raise ValueError(f"Missing required credentials in {config_file}: {', '.join(missing_fields)}")
 
+    placeholder_values = {
+        'client_id': {'YOUR_CLIENT_ID'},
+        'client_secret': {'YOUR_CLIENT_SECRET'},
+        'user_agent': {'YOUR_APP_NAME by u/YOUR_USERNAME'},
+    }
+
+    for field, disallowed_values in placeholder_values.items():
+        if credentials.get(field) in disallowed_values:
+            raise ValueError(
+                f"Configuration file '{config_file}' still contains a placeholder for '{field}'. Please update it with your Reddit credentials."
+            )
+
     return praw.Reddit(
         client_id=credentials.get('client_id'),
         client_secret=credentials.get('client_secret'),
@@ -53,6 +66,46 @@ def get_reddit_instance(config_file: str = 'config.ini') -> praw.Reddit:
 
 def _format_author(author: Optional[praw.models.Redditor]) -> str:
     return f"u/{author.name}" if author else "[deleted]"
+
+
+def load_demo_posts() -> List[PostRecord]:
+    """Provide synthetic posts so the tool can run without Reddit credentials."""
+
+    now = datetime.now()
+    return [
+        PostRecord(
+            title="Unpopular opinion: Your beautiful website is costing you sales",
+            author="u/ClevrSolutions",
+            score=94,
+            comments=42,
+            url="https://www.reddit.com/r/smallbusiness/comments/1ozz17r/",
+            created_at=now - timedelta(days=2, hours=3),
+        ),
+        PostRecord(
+            title="Landlord wants us to pay to replace all HVAC?",
+            author="u/TheExusGamer",
+            score=46,
+            comments=75,
+            url="https://www.reddit.com/r/smallbusiness/comments/1ozsln8/",
+            created_at=now - timedelta(days=3, hours=7),
+        ),
+        PostRecord(
+            title="Promote your business, week of November 17, 2025",
+            author="u/Charice",
+            score=39,
+            comments=118,
+            url="https://www.reddit.com/r/smallbusiness/comments/1oz49vv/",
+            created_at=now - timedelta(days=4, hours=5),
+        ),
+        PostRecord(
+            title="In this post, share your small business experience, successes, failures, AMAS, and lessons learned.",
+            author="u/Charice",
+            score=21,
+            comments=158,
+            url="https://www.reddit.com/r/smallbusiness/comments/1ltkg12/",
+            created_at=now - timedelta(days=10),
+        ),
+    ]
 
 
 def fetch_posts(reddit: praw.Reddit, subreddit_name: str, sort: str, limit: int, time_filter: str) -> List[PostRecord]:
@@ -142,16 +195,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(description='A CLI tool to gather intelligence from Reddit.')
     parser.add_argument('--subreddit', type=str, required=True, help='The subreddit to analyze.')
     parser.add_argument('--report-type', type=str, required=True, choices=['overview', 'detailed', 'summary'], help='The type of report to generate.')
+    parser.add_argument('--config', type=str, default='config.ini', help='Path to the configuration file with Reddit credentials.')
     parser.add_argument('--sort', type=str, choices=['hot', 'new', 'top'], default='hot', help='How to sort posts before analysis.')
     parser.add_argument('--limit', type=int, default=15, help='Number of posts to analyze.')
     parser.add_argument('--time-filter', type=str, choices=['all', 'day', 'hour', 'month', 'week', 'year'], default='week', help='Time filter when sorting by top posts.')
     parser.add_argument('--output', type=str, help='Output filename for CSV export.')
+    parser.add_argument('--demo', action='store_true', help='Use sample posts instead of contacting Reddit (no credentials needed).')
 
     args = parser.parse_args()
 
     try:
-        reddit = get_reddit_instance()
-        posts = fetch_posts(reddit, args.subreddit, args.sort, args.limit, args.time_filter)
+        if args.demo:
+            posts = load_demo_posts()
+            print("Using demo data (no Reddit credentials needed).")
+        else:
+            reddit = get_reddit_instance(args.config)
+            posts = fetch_posts(reddit, args.subreddit, args.sort, args.limit, args.time_filter)
 
         print(f"Generating {args.report_type} report for r/{args.subreddit} ({len(posts)} posts)...")
         if args.report_type == 'overview':
@@ -166,6 +225,8 @@ def main() -> None:
 
     except (ValueError, FileNotFoundError, configparser.Error) as e:
         print(f"Error: {e}")
+    except PrawcoreException as e:
+        print(f"Reddit API error: {e}. Please verify your credentials and network connectivity.")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
 
